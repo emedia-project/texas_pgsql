@@ -1,25 +1,37 @@
 -module(texas_pgsql).
 
 -export([start/0]).
--export([connect/5, exec/2, close/1]).
+-export([connect/6, exec/2, close/1]).
 -export([create_table/2]).
 -export([insert/3, select/4, update/4, delete/3]).
 
+-define(STRING_SEPARATOR, $').
+-define(STRING_QUOTE, $').
+
+-type connection() :: any().
+-type err() :: any().
+-type tablename() :: atom().
+-type data() :: any().
+-type clause_type() :: where | group | order | limit.
+-type clause() :: {clause_type(), string(), [tuple()]} |
+                  {clause_type(), string(), []}.
+-type clauses() :: [clause()] | [].
+
+-spec start() -> ok.
 start() ->
   ok.
 
-% -> {ok, Conn} | ...error
-connect(User, Password, Server, Port, Database) ->
+-spec connect(string(), string(), string(), integer(), string(), any()) -> 
+  {ok, connection()} | {error, err()}.
+connect(User, Password, Server, Port, Database, _Options) ->
   lager:info("Open database pgsql://~p:~p@~p:~p/~p", [User, Password, Server, Port, Database]),
   pgsql:connect(Server, User, Password, [{database, Database}, {port, list_to_integer(Port)}]).
 
-exec(SQL, Conn) ->
-  pgsql:squery(Conn, SQL).
-
+-spec close(connection()) -> ok | error.
 close(Conn) ->
   pgsql:close(Conn).
 
-% -> ok | error
+-spec create_table(connection(), tablename()) -> ok | error.
 create_table(Conn, Table) ->
   SQLCmd = sql(
     create_table, 
@@ -41,12 +53,13 @@ create_table(Conn, Table) ->
     _ -> error
   end.
 
-% -> Record | {error, Error}
+-spec insert(connection(), tablename(), data()) -> data() | {error, err()}.
 insert(Conn, Table, Record) ->
   {Fields, Values} = lists:foldl(fun(Field, {FieldsAcc, ValuesAcc}) ->
           case Record:Field() of
             undefined -> {FieldsAcc, ValuesAcc};
-            Value -> {FieldsAcc ++ [atom_to_list(Field)], ValuesAcc ++ [sql(format, Value)]}
+            Value -> {FieldsAcc ++ [atom_to_list(Field)], 
+                      ValuesAcc ++ [texas_sql:to_sql_string(Value, ?STRING_SEPARATOR, ?STRING_QUOTE)]}
           end
       end, {[], []}, Table:fields()),
   SQLCmd = sql(insert, atom_to_list(Table), Fields, Values, Table:table_pk_id()),
@@ -59,11 +72,13 @@ insert(Conn, Table, Record) ->
     _ -> Record
   end.
 
-% -> Record | [Record] | {error, Error}
+-spec select(connection(), tablename(), first | all, clauses()) -> 
+  data() | [data()] | [] | {error, err()}.
 select(Conn, Table, Type, Clauses) -> 
   SQLCmd = sql(select, atom_to_list(Table), sql(clause, Clauses), Type),
   lager:info("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
+    {ok, _, []} -> [];
     {ok, Cols, Datas} -> 
       ColsList = lists:map(fun({column, Col, _, _, _, _}) -> binary_to_atom(Col, utf8) end, Cols),
       case Type of
@@ -77,15 +92,8 @@ select(Conn, Table, Type, Clauses) ->
       end;
     E -> E
   end.
-assoc(Table, Cols, Datas) ->
-  lists:map(fun({Col, Data}) ->
-        case Data of
-          null -> {Col, undefined};
-          _ -> {Col, texas_type:to(Table:type(Col), Data)}
-        end
-    end, lists:zip(Cols, tuple_to_list(Datas))).
 
-% -> [Record] | {error, Error}
+-spec update(connection(), tablename(), data(), [tuple()]) -> [data()] | {error, err()}.
 update(Conn, Table, Record, UpdateData) ->
   Where = join(lists:foldl(fun(Field, W) ->
             case Record:Field() of
@@ -105,7 +113,7 @@ update(Conn, Table, Record, UpdateData) ->
     E -> E
   end.
 
-% -> ok | {error, Error}
+-spec delete(connection(), tablename(), data()) -> ok | {error, err()}.
 delete(Conn, Table, Record) ->
   WhereClause = texas_sql:record_to_where_clause(Table, Record),
   SQLCmd = sql(delete, atom_to_list(Table), sql(clause, [WhereClause])),
@@ -115,9 +123,22 @@ delete(Conn, Table, Record) ->
     E -> E
   end.
 
+% Private --
+
+exec(SQL, Conn) ->
+  pgsql:squery(Conn, SQL).
+
+assoc(Table, Cols, Datas) ->
+  lists:map(fun({Col, Data}) ->
+        case Data of
+          null -> {Col, undefined};
+          _ -> {Col, texas_type:to(Table:type(Col), Data)}
+        end
+    end, lists:zip(Cols, tuple_to_list(Datas))).
+
 join(KVList, Sep) ->
   string:join(lists:map(fun({K, V}) ->
-          io_lib:format("~p = ~s", [K, sql(format, V)])
+          io_lib:format("~p = ~s", [K, texas_sql:to_sql_string(V, ?STRING_SEPARATOR, ?STRING_QUOTE)])
       end, KVList), Sep).
 
 sql(create_table, Name, ColDefs) -> 
@@ -154,18 +175,14 @@ sql(order, Data) -> "ORDER BY " ++ Data;
 sql(limit, Data) -> "LIMIT " ++ Data;
 sql(notnull, {ok, true}) -> " NOT NULL";
 sql(unique, {ok, true}) -> " UNIQUE";
-sql(default, {ok, Value}) -> io_lib:format(" DEFAULT ~s", [sql(format, Value)]);
+sql(default, {ok, Value}) -> io_lib:format(" DEFAULT ~s", [texas_sql:to_sql_string(Value, ?STRING_SEPARATOR, ?STRING_QUOTE)]);
 sql(clause, Clauses) when is_list(Clauses) ->
   lists:map(fun(Clause) -> sql(clause, Clause) end, Clauses);
 sql(clause, {Type, Str, Params}) ->
   WhereClause = lists:foldl(fun({Field, Value}, Clause) ->
-        re:replace(Clause, ":" ++ atom_to_list(Field), sql(format, Value), [global, {return, list}])
+        estring:gsub(Clause, ":" ++ atom_to_list(Field), texas_sql:to_sql_string(Value, ?STRING_SEPARATOR, ?STRING_QUOTE))
     end, Str, Params),
   sql(Type, WhereClause);
 sql(clause, {Type, Str}) ->
   sql(clause, {Type, Str, []});
-sql(format, Data) when is_list(Data) ->
-  io_lib:format("'~s'", [Data]);
-sql(format, Data) ->
-  io_lib:format("~p", [Data]);
 sql(_, _) -> "".
