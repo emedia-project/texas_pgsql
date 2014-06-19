@@ -7,6 +7,7 @@
 
 -define(STRING_SEPARATOR, $').
 -define(STRING_QUOTE, $').
+-define(FIELD_SEPARATOR, none).
 
 -type connection() :: any().
 -type err() :: any().
@@ -24,12 +25,12 @@ start() ->
 -spec connect(string(), string(), string(), integer(), string(), any()) -> 
   {ok, connection()} | {error, err()}.
 connect(User, Password, Server, Port, Database, _Options) ->
-  lager:info("Open database pgsql://~p:~p@~p:~p/~p", [User, Password, Server, Port, Database]),
+  lager:debug("Open database pgsql://~p:~p@~p:~p/~p", [User, Password, Server, Port, Database]),
   pgsql:connect(Server, User, Password, [{database, Database}, {port, list_to_integer(Port)}]).
 
 -spec close(connection()) -> ok | error.
 close(Conn) ->
-  pgsql:close(Conn).
+  pgsql:close(texas:connection(Conn)).
 
 -spec create_table(connection(), tablename()) -> ok | error.
 create_table(Conn, Table) ->
@@ -47,7 +48,7 @@ create_table(Conn, Table) ->
               Table:unique(Field),
               Table:default(Field))
         end, Table:fields())),
-  lager:info("~s", [SQLCmd]),
+  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, _} -> ok;
     _ -> error
@@ -58,12 +59,12 @@ insert(Conn, Table, Record) ->
   {Fields, Values} = lists:foldl(fun(Field, {FieldsAcc, ValuesAcc}) ->
           case Record:Field() of
             undefined -> {FieldsAcc, ValuesAcc};
-            Value -> {FieldsAcc ++ [atom_to_list(Field)], 
+            Value -> {FieldsAcc ++ [texas_sql:to_sql_field(Field, ?FIELD_SEPARATOR)], 
                       ValuesAcc ++ [texas_sql:to_sql_string(Value, ?STRING_SEPARATOR, ?STRING_QUOTE)]}
           end
       end, {[], []}, Table:fields()),
   SQLCmd = sql(insert, atom_to_list(Table), Fields, Values, Table:table_pk_id()),
-  lager:info("~s", [SQLCmd]),
+  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, 1, [{column, Col, _, _, _, _}],[{ID}]} -> 
       ACol = binary_to_atom(Col, utf8), 
@@ -76,7 +77,7 @@ insert(Conn, Table, Record) ->
   data() | [data()] | [] | {error, err()}.
 select(Conn, Table, Type, Clauses) -> 
   SQLCmd = sql(select, atom_to_list(Table), sql(clause, Clauses), Type),
-  lager:info("~s", [SQLCmd]),
+  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, []} -> [];
     {ok, Cols, Datas} -> 
@@ -84,10 +85,10 @@ select(Conn, Table, Type, Clauses) ->
       case Type of
         first -> 
           [Data|_] = Datas, 
-          Table:new(assoc(Table, ColsList, Data));
+          Table:new(Conn, assoc(Table, ColsList, Data));
         _ -> 
           lists:map(fun(Data) ->
-                Table:new(assoc(Table, ColsList, Data))
+                Table:new(Conn, assoc(Table, ColsList, Data))
             end, Datas)
       end;
     E -> E
@@ -102,8 +103,8 @@ update(Conn, Table, Record, UpdateData) ->
             end
         end, [], Table:fields()), " AND "),
   Set = join(UpdateData, ", "),
-  SQLCmd = "UPDATE " ++ atom_to_list(Table) ++ " SET " ++ Set ++ " WHERE " ++ Where ++ ";",
-  lager:info("~s", [SQLCmd]),
+  SQLCmd = "UPDATE " ++ texas_sql:to_sql_field(Table, ?FIELD_SEPARATOR) ++ " SET " ++ Set ++ " WHERE " ++ Where ++ ";",
+  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _} -> 
       UpdateRecord = lists:foldl(fun({Field, Value}, Rec) ->
@@ -117,7 +118,7 @@ update(Conn, Table, Record, UpdateData) ->
 delete(Conn, Table, Record) ->
   WhereClause = texas_sql:record_to_where_clause(Table, Record),
   SQLCmd = sql(delete, atom_to_list(Table), sql(clause, [WhereClause])),
-  lager:info("~s", [SQLCmd]),
+  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _} -> ok;
     E -> E
@@ -126,7 +127,7 @@ delete(Conn, Table, Record) ->
 % Private --
 
 exec(SQL, Conn) ->
-  pgsql:squery(Conn, SQL).
+  pgsql:squery(texas:connection(Conn), SQL).
 
 assoc(Table, Cols, Datas) ->
   lists:map(fun({Col, Data}) ->
