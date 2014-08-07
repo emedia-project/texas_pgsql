@@ -204,7 +204,12 @@ assoc(Cols, Datas) ->
     end, lists:zip(Cols, tuple_to_list(Datas))).
 
 sql(create_table, Name, ColDefs) -> 
-  "CREATE TABLE IF NOT EXISTS " ++ Name ++ " (" ++ string:join(ColDefs, ", ") ++ ");".
+  "CREATE TABLE IF NOT EXISTS " ++ Name ++ " (" ++ string:join(ColDefs, ", ") ++ ");";
+sql(default, date, {ok, now}) -> " DEFAULT CURRENT_DATE";
+sql(default, time, {ok, now}) -> " DEFAULT CURRENT_TIME";
+sql(default, datetime, {ok, now}) -> " DEFAULT CURRENT_TIMESTAMP";
+sql(default, _, {ok, Value}) -> io_lib:format(" DEFAULT ~s", [texas_sql:sql_string(Value, ?MODULE)]);
+sql(default, _, _) -> "".
 sql(type, id, {ok, true}, _) -> " BIGSERIAL PRIMARY KEY";
 sql(type, id, _, _) -> " BIGINT";
 sql(type, integer, {ok, true}, _) -> " BIGSERIAL PRIMARY KEY";
@@ -212,14 +217,16 @@ sql(type, integer, _, _) -> " BIGINT";
 sql(type, string, _, {ok, Len}) -> " VARCHAR(" ++ integer_to_list(Len) ++ ")";
 sql(type, string, _, _) -> " TEXT";
 sql(type, float, _, _) -> " REAL";
+sql(type, date, _, _) -> " DATE";
+sql(type, time, _, _) -> " TIME";
+sql(type, datetime, _, _) -> " TIMESTAMP(0)";
 sql(type, _, _, _) -> " TEXT".
 sql(column_def, Name, Type, Len, Autoincrement, NotNull, Unique, Default) ->
   Name ++ 
   sql(type, Type, Autoincrement, Len) ++ 
   sql(notnull, NotNull) ++
   sql(unique, Unique) ++
-  sql(default, Default).
+  sql(default, Type, Default).
 sql(notnull, {ok, true}) -> " NOT NULL";
 sql(unique, {ok, true}) -> " UNIQUE";
-sql(default, {ok, Value}) -> io_lib:format(" DEFAULT ~s", [texas_sql:sql_string(Value, ?MODULE)]);
 sql(_, _) -> "".
