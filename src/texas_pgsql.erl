@@ -31,24 +31,24 @@ set_null(Key)  -> io_lib:format("~s = NULL", [texas_sql:sql_field(Key, ?MODULE)]
 start() ->
   ok.
 
--spec connect(string(), string(), string(), integer(), string(), any()) -> 
+-spec connect(string(), string(), string(), integer(), string(), any()) ->
   {ok, connection()} | {error, err()}.
 connect(User, Password, Server, Port, Database, _Options) ->
   lager:debug("Open database pgsql://~p:~p@~p:~p/~p", [User, Password, Server, Port, Database]),
-  pgsql:connect(Server, User, Password, [{database, Database}, {port, list_to_integer(Port)}]).
+  epgsql:connect(Server, User, Password, [{database, Database}, {port, list_to_integer(Port)}]).
 
 -spec close(connection()) -> ok | error.
 close(Conn) ->
-  pgsql:close(texas:connection(Conn)).
+  epgsql:close(texas:connection(Conn)).
 
 -spec create_table(connection(), tablename()) -> ok | error.
 create_table(Conn, Table) ->
   SQLCmd = sql(
-    create_table, 
-    atom_to_list(Table), 
+    create_table,
+    atom_to_list(Table),
     lists:map(fun(Field) ->
             sql(
-              column_def, 
+              column_def,
               atom_to_list(Field),
               Table:'-type'(Field),
               Table:'-len'(Field),
@@ -66,11 +66,11 @@ create_table(Conn, Table) ->
 -spec create_table(connection(), tablename(), list()) -> ok | error.
 create_table(Conn, Table, Fields) ->
   SQLCmd = sql(
-    create_table, 
-    atom_to_list(Table), 
+    create_table,
+    atom_to_list(Table),
     lists:map(fun({Field, Options}) ->
             sql(
-              column_def, 
+              column_def,
               atom_to_list(Field),
               texas_sql:get_option(type, Options),
               texas_sql:get_option(len, Options),
@@ -96,11 +96,11 @@ drop_table(Conn, Table) ->
 
 -spec insert(connection(), tablename(), data()) -> data() | {error, err()}.
 insert(Conn, Table, Record) ->
-  SQLCmd = "INSERT INTO " ++ 
+  SQLCmd = "INSERT INTO " ++
            texas_sql:sql_field(Table, ?MODULE) ++
-           texas_sql:insert_clause(Record, ?MODULE) ++ 
+           texas_sql:insert_clause(Record, ?MODULE) ++
            case texas_sql:defined_table(Table) of
-             true -> 
+             true ->
                case Table:'-table_pk_id'() of
                  {ok, PkID} -> " RETURNING " ++ atom_to_list(PkID);
                  _ -> ""
@@ -109,21 +109,21 @@ insert(Conn, Table, Record) ->
            end,
   lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
-    {ok, 1, [{column, Col, _, _, _, _}],[{ID}]} -> 
+    {ok, 1, [{column, Col, _, _, _, _}],[{ID}]} ->
       case texas_sql:defined_table(Table) of
-        true -> 
-          ACol = binary_to_atom(Col, utf8), 
+        true ->
+          ACol = binary_to_atom(Col, utf8),
           select(Conn, Table, first, [{where, [{ACol, texas_type:to(Table:'-type'(ACol), ID)}]}]);
         false -> ok
       end;
     {error, Error} -> {error, Error};
-    _ -> 
+    _ ->
       Record
   end.
 
--spec select(connection(), tablename(), first | all, clauses()) -> 
+-spec select(connection(), tablename(), first | all, clauses()) ->
   data() | [data()] | [] | {error, err()}.
-select(Conn, Table, Type, Clauses) -> 
+select(Conn, Table, Type, Clauses) ->
   SQLCmd = "SELECT * FROM " ++
            texas_sql:sql_field(Table, ?MODULE) ++
            texas_sql:where_clause(texas_sql:clause(where, Clauses), ?MODULE) ++
@@ -135,16 +135,16 @@ select(Conn, Table, Type, Clauses) ->
   lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, []} -> [];
-    {ok, Cols, Datas} -> 
+    {ok, Cols, Datas} ->
       ColsList = lists:map(fun({column, Col, _, _, _, _}) -> binary_to_atom(Col, utf8) end, Cols),
       case Type of
-        first -> 
-          [Data|_] = Datas, 
+        first ->
+          [Data|_] = Datas,
           case texas_sql:defined_table(Table) of
             true -> Table:new(Conn, assoc(Table, ColsList, Data));
             _ -> assoc(ColsList, Data)
           end;
-        _ -> 
+        _ ->
           lists:map(fun(Data) ->
                 case texas_sql:defined_table(Table) of
                   true -> Table:new(Conn, assoc(Table, ColsList, Data));
@@ -163,7 +163,7 @@ update(Conn, Table, Record, UpdateData) ->
            texas_sql:where_clause(Record, ?MODULE),
   lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
-    {ok, _} -> 
+    {ok, _} ->
       UpdateRecord = lists:foldl(fun({Field, Value}, Rec) ->
               Rec:Field(Value)
           end, Record, UpdateData),
@@ -185,7 +185,7 @@ delete(Conn, Table, Record) ->
 % Private --
 
 exec(SQL, Conn) ->
-  pgsql:squery(texas:connection(Conn), SQL).
+  epgsql:squery(texas:connection(Conn), SQL).
 
 assoc(Table, Cols, Datas) ->
   lists:map(fun({Col, Data}) ->
@@ -203,7 +203,7 @@ assoc(Cols, Datas) ->
         end
     end, lists:zip(Cols, tuple_to_list(Datas))).
 
-sql(create_table, Name, ColDefs) -> 
+sql(create_table, Name, ColDefs) ->
   "CREATE TABLE IF NOT EXISTS " ++ Name ++ " (" ++ string:join(ColDefs, ", ") ++ ");";
 sql(default, date, {ok, now}) -> " DEFAULT CURRENT_DATE";
 sql(default, time, {ok, now}) -> " DEFAULT CURRENT_TIME";
@@ -222,8 +222,8 @@ sql(type, time, _, _) -> " TIME";
 sql(type, datetime, _, _) -> " TIMESTAMP(0)";
 sql(type, _, _, _) -> " TEXT".
 sql(column_def, Name, Type, Len, Autoincrement, NotNull, Unique, Default) ->
-  Name ++ 
-  sql(type, Type, Autoincrement, Len) ++ 
+  Name ++
+  sql(type, Type, Autoincrement, Len) ++
   sql(notnull, NotNull) ++
   sql(unique, Unique) ++
   sql(default, Type, Default).
