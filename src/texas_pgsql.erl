@@ -185,6 +185,7 @@ delete(Conn, Table, Record) ->
 % Private --
 
 exec(SQL, Conn) ->
+  lager:debug("==> ~p", [SQL]),
   epgsql:squery(texas:connection(Conn), SQL).
 
 assoc(Table, Cols, Datas) ->
