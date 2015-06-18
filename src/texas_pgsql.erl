@@ -3,7 +3,7 @@
 -export([start/0]).
 -export([connect/6, exec/2, close/1]).
 -export([create_table/2, create_table/3, drop_table/2]).
--export([insert/3, select/4, update/4, delete/3]).
+-export([insert/3, select/4, count/3, update/4, delete/3]).
 -export([string_separator/0, string_quote/0, field_separator/0]).
 -export([where_null/2, set_null/1]).
 
@@ -57,7 +57,6 @@ create_table(Conn, Table) ->
               Table:'-unique'(Field),
               Table:'-default'(Field))
         end, Table:'-fields'())),
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, _} -> ok;
     _ -> error
@@ -79,7 +78,6 @@ create_table(Conn, Table, Fields) ->
               texas_sql:get_option(unique, Options),
               texas_sql:get_option(default, Options))
         end, Fields)),
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, _} -> ok;
     _ -> error
@@ -88,7 +86,6 @@ create_table(Conn, Table, Fields) ->
 -spec drop_table(connection(), tablename()) -> ok | error.
 drop_table(Conn, Table) ->
   SQLCmd = "DROP TABLE IF EXISTS " ++ atom_to_list(Table),
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, _} -> ok;
     _ -> error
@@ -107,7 +104,6 @@ insert(Conn, Table, Record) ->
                end;
              _ -> ""
            end,
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, 1, [{column, Col, _, _, _, _}],[{ID}]} ->
       case texas_sql:defined_table(Table) of
@@ -121,18 +117,23 @@ insert(Conn, Table, Record) ->
       Record
   end.
 
--spec select(connection(), tablename(), first | all, clauses()) ->
+-spec select(connection(), tablename(), first | all | integer() | {integer(), integer()}, clauses()) ->
   data() | [data()] | [] | {error, err()}.
 select(Conn, Table, Type, Clauses) ->
   SQLCmd = "SELECT * FROM " ++
            texas_sql:sql_field(Table, ?MODULE) ++
            texas_sql:where_clause(texas_sql:clause(where, Clauses), ?MODULE) ++
            case Type of
-             first -> " LIMIT 1";
-             _ -> ""
+             first ->
+               " LIMIT 1";
+             Type when is_integer(Type) ->
+               lists:flatten(io_lib:format(" LIMIT ~p", [Type]));
+             {Limit, Offset} ->
+               lists:flatten(io_lib:format(" LIMIT ~p OFFSET ~p", [Limit, Offset]));
+             _ ->
+               ""
            end,
            % TODO : add GROUP BY, ORDER BY, LIMIT
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _, []} -> [];
     {ok, Cols, Datas} ->
@@ -155,13 +156,23 @@ select(Conn, Table, Type, Clauses) ->
     E -> E
   end.
 
+-spec count(connection(), tablename(), clauses()) -> integer().
+count(Conn, Table, Clauses) ->
+  SQLCmd = "SELECT COUNT(*) FROM " ++
+           texas_sql:sql_field(Table, ?MODULE) ++
+           texas_sql:where_clause(texas_sql:clause(where, Clauses), ?MODULE),
+  case exec(SQLCmd, Conn) of
+    {ok, _, [{N}]} ->
+      eutils:to_integer(N);
+    _ -> 0
+  end.
+
 -spec update(connection(), tablename(), data(), [tuple()]) -> [data()] | {error, err()}.
 update(Conn, Table, Record, UpdateData) ->
   SQLCmd = "UPDATE " ++
            texas_sql:sql_field(Table, ?MODULE) ++
            texas_sql:set_clause(UpdateData, ?MODULE) ++
            texas_sql:where_clause(Record, ?MODULE),
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _} ->
       UpdateRecord = lists:foldl(fun({Field, Value}, Rec) ->
@@ -176,7 +187,6 @@ delete(Conn, Table, Record) ->
   SQLCmd = "DELETE FROM " ++
            texas_sql:sql_field(Table, ?MODULE) ++
            texas_sql:where_clause(Record, ?MODULE),
-  lager:debug("~s", [SQLCmd]),
   case exec(SQLCmd, Conn) of
     {ok, _} -> ok;
     E -> E
