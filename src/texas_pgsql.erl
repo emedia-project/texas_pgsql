@@ -1,4 +1,5 @@
 -module(texas_pgsql).
+-compile([{parse_transform, lager_transform}]).
 
 -export([start/0]).
 -export([connect/6, exec/2, close/1]).
@@ -163,7 +164,7 @@ count(Conn, Table, Clauses) ->
            texas_sql:where_clause(texas_sql:clause(where, Clauses), ?MODULE),
   case exec(SQLCmd, Conn) of
     {ok, _, [{N}]} ->
-      eutils:to_integer(N);
+      bucs:to_integer(N);
     _ -> 0
   end.
 
