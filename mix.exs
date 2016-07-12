@@ -23,7 +23,7 @@ defmodule Texas.Pgsql.Mixfile do
     [
       {:lager, "~> 3.2"},
       {:texas_adapter, git: "https://github.com/emedia-project/texas_adapter.git", branch: "master"},
-      {:bucs, git: "https://github.com/botsunit/bucs.git", branch: "master"},
+      {:bucs, "~> 0.1.0"},
       {:epgsql, "~> 3.2"}    
     ]
   end
