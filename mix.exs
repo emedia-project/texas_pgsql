@@ -24,7 +24,7 @@ defmodule Texas.Pgsql.Mixfile do
     [
       {:lager, "~> 3.2.0"},
       {:texas_adapter, git: "https://github.com/emedia-project/texas_adapter.git", branch: "master"},
-      {:bucs, "~> 1.0.2"},
+      {:bucs, "~> 1.0.3"},
       {:epgsql, "~> 3.2"}    
     ]
   end
@@ -35,8 +35,9 @@ defmodule Texas.Pgsql.Mixfile do
 
   defp compile_with_hooks(args) do
     pre_compile_hooks()
-    :ok = Mix.Task.run("compile", args)
+    result = Mix.Task.run("compile", args)
     post_compile_hooks()
+    result
   end
 
   defp pre_compile_hooks() do
