@@ -8,8 +8,8 @@ defmodule Texas.Pgsql.Mixfile do
       elixir: "~> 1.2",
       build_embedded: Mix.env == :prod,
       start_permanent: Mix.env == :prod,
-      deps: deps,
-      aliases: aliases
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
@@ -24,7 +24,7 @@ defmodule Texas.Pgsql.Mixfile do
     [
       {:lager, "~> 3.2.0"},
       {:texas_adapter, git: "https://github.com/emedia-project/texas_adapter.git", branch: "master"},
-      {:bucs, "~> 1.0.3"},
+      {:bucs, "~> 1.0.6"},
       {:epgsql, "~> 3.2"}    
     ]
   end

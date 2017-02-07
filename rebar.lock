@@ -1,8 +1,8 @@
-[{<<"bucs">>,{pkg,<<"bucs">>,<<"1.0.3">>},0},
- {<<"epgsql">>,{pkg,<<"epgsql">>,<<"3.2.0">>},0},
- {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.8">>},1},
- {<<"lager">>,{pkg,<<"lager">>,<<"3.2.1">>},0},
+[{<<"bucs">>,{pkg,<<"bucs">>,<<"1.0.6">>},0},
+ {<<"epgsql">>,{pkg,<<"epgsql">>,<<"3.3.0">>},0},
+ {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
+ {<<"lager">>,{pkg,<<"lager">>,<<"3.2.4">>},0},
  {<<"texas_adapter">>,
   {git,"https://github.com/emedia-project/texas_adapter.git",
-       {ref,"7ade01a38f6ef6a336ab53b3c3ce7bafe48af9b5"}},
+       {ref,"38e16fc728a8b3db666c8feab3eca206495ba22f"}},
   0}].
